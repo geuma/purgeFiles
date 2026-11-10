@@ -1,225 +1,365 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 #
-#   Copyright John Quinn, 2009
+# Copyright John Quinn, 2009
 #
-#   This program is free software: you can redistribute it and/or modify
-#   it under the terms of the GNU General Public License as published by
-#   the Free Software Foundation, either version 3 of the License, or
-#   (at your option) any later version.
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
 #
-#   This program is distributed in the hope that it will be useful,
-#   but WITHOUT ANY WARRANTY; without even the implied warranty of
-#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#   GNU General Public License for more details.
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
 #
-#   You should have received a copy of the GNU General Public License
-#   along with this program.  If not, see <http://www.gnu.org/licenses/>.
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see:
+# https://www.gnu.org/licenses/
 #
 
-import sys, os, getopt, time, fnmatch
+import fnmatch
+import getopt
+import os
 import shutil
+import sys
+import time
+
 
 def main(argv):
-    # set default behavior
+    """Parse command-line arguments and start the purge operation."""
+
+    # Set default behavior.
     force = False
-    ages = 'unset'
-    directory = 'unset'
-    pattern = '*'
+    ages = None
+    directory = None
+    pattern = "*"
 
-    # process command line
     try:
-       opts, args = getopt.getopt(argv, 'ha:d:p:f', ['help', 'ages=', 'directory=', 'pattern=', 'force'])
-       if len(args) > 0:
-          print 'ignoring args: %s' % args
-    except getopt.GetoptError, err:
-       print str(err)
-       usage()
-       sys.exit(2)
+        opts, args = getopt.getopt(
+            argv,
+            "ha:d:p:f",
+            [
+                "help",
+                "ages=",
+                "directory=",
+                "pattern=",
+                "force",
+            ],
+        )
+
+        if args:
+            print(f"Ignoring arguments: {args}")
+
+    except getopt.GetoptError as err:
+        print(err, file=sys.stderr)
+        usage(exit_code=2)
+
     for opt, arg in opts:
-       if opt in ('-h', '--help'):
-           usage()
-           sys.exit(2)
-       elif opt in ('-d', '--directory'):
-           directory = arg
-       elif opt in ('-p', '--pattern'):
-           pattern = arg
-       elif opt in ('-a', '--ages'):
-           ages = arg
-       elif opt in ('-f', '--force'):
-           force = True
+        if opt in ("-h", "--help"):
+            usage(exit_code=0)
 
-    # verify mandatory arguments
-    if ages == 'unset':
-       print 'age must be specified (the -a option)'
-       usage()
+        elif opt in ("-d", "--directory"):
+            directory = arg
 
-    if directory == 'unset':
-       print 'directory must be specified (the -d option)'
-       usage()
+        elif opt in ("-p", "--pattern"):
+            pattern = arg
 
-    # purge the directory
+        elif opt in ("-a", "--ages"):
+            ages = arg
+
+        elif opt in ("-f", "--force"):
+            force = True
+
+    if ages is None:
+        print("filepurge: age must be specified using the -a option",
+              file=sys.stderr)
+        usage(exit_code=2)
+
+    if directory is None:
+        print("filepurge: directory must be specified using the -d option",
+              file=sys.stderr)
+        usage(exit_code=2)
+
     purge(directory, pattern, ages, force)
 
 
-# print the usage message and bail
-def usage():
-    print 'Usage: purgeFiles [OPTION]...';
-    print ' -h, --help                          Print this help message';
-    print ' -a, --ages=age1,age2                Desired ages to keep (in days)';
-    print ' -d, --directory=dir                 Target directory';
-    print ' -p, --pattern=pattern               File pattern to match';
-    print ' -f, --force                         Force deletion (no simulation mode)\n';
-    print 'e.g. purgeFiles --ages=1,2,4,40 --directory=/tmp --pattern="*.txt"';
-    print 'This would purge /tmp and try to keep a files ending in .txt of 40 days, 4 days, 2 days and 1 day old. '
-    print 'Note: this would only do a simulation run. Specify --force to actually delete the files. '
+def usage(exit_code=2):
+    """Print usage information and exit."""
 
-    print '\nAuthor: John Quinn, http://johnandcailin.com/john';
-    sys.exit(2)
+    print("Usage: purgeFiles [OPTION]...")
+    print(" -h, --help                    Print this help message")
+    print(" -a, --ages=age1,age2          Desired ages to keep, in days")
+    print(" -d, --directory=dir           Target directory")
+    print(" -p, --pattern=pattern         File pattern to match")
+    print(" -f, --force                   Delete files instead of simulating")
+    print()
+    print(
+        'Example: purgeFiles --ages=1,2,4,40 '
+        '--directory=/tmp --pattern="*.txt"'
+    )
+    print()
+    print(
+        "This keeps files matching *.txt that are approximately "
+        "40, 4, 2 and 1 days old."
+    )
+    print(
+        "Without --force, the program only simulates the deletion."
+    )
+    print()
+    print("Original author: John Quinn")
 
-# check for backup directory permissions etc
-def checkBackupArea(directory):
-    areaGood = True
-
-    if os.path.exists(directory) == False:
-        print 'filepurge: directory %s: does not exist\n' % directory
-        usage()
-
-    if os.path.isdir(directory) == False:
-       print 'filepurge: %s is not a directory. please specify the directory to be purged\n' % directory
-       usage()
-
-    access = os.access(directory, os.W_OK|os.R_OK)
-    if access == False:
-        print 'filepurge: directory %s: not readable and writable\n' % directory
-        usage()
-
-# check our argument validity
-def checkArguments(ages):
-    clean, agesList = parseAgesArgument(ages)
-    if clean != True:
-        print 'filepurge: invalid ages argument: %s' % ages
-        usage()
-    return agesList
+    raise SystemExit(exit_code)
 
 
-# parse ages argument and return a reverse-chronological list of desired ages in seconds from the epoch
-def parseAgesArgument(ages):
-    clean = True
-    agesList = []
-    agesStringList = ages.split(',')
-    for ageString in agesStringList:
-        if ageString.isdigit() != True:
-            clean = False
-            break
-    for ageString in agesStringList:
-        try:
-            agesList.append(int(ageString))
-        except ValueError:
-            clean = False
-            break
+def check_backup_area(directory):
+    """Check that the target directory exists and is accessible."""
 
-    agesList.sort(reverse=True)
-    return clean, agesList
+    absolute_directory = os.path.abspath(directory)
 
-# return an age sorted directory listing (tuple list), with ages
-def getSortedDirList(directory, pattern):
-    dirList = os.listdir(directory)
-    sortedDirList = []
+    if not os.path.exists(absolute_directory):
+        print(
+            f"filepurge: directory does not exist: {absolute_directory}",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
 
-    for baseName in dirList:
-       if fnmatch.fnmatch(baseName, pattern):
-           fileName = os.path.join(directory,baseName)
-           fileAge = os.path.getmtime(fileName)
-           fileTuple = (fileAge, fileName, baseName)
-           sortedDirList.append(fileTuple)
-    sortedDirList.sort()
+    if not os.path.isdir(absolute_directory):
+        print(
+            f"filepurge: target is not a directory: {absolute_directory}",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
 
-    return sortedDirList
+    if not os.access(absolute_directory, os.R_OK | os.W_OK):
+        print(
+            "filepurge: directory is not readable and writable: "
+            f"{absolute_directory}",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
 
-# delete the file respecting the force mode
-def deleteFile(file, force):
-    baseName = file[2]
-    fileName = file[1]
-    if force == False:
-        print '%s: Flagged for deletion' % baseName
-    else:
-        # First check if we are removing a folder or a file...
-        if os.path.isdir(fileName):
-            shutil.rmtree(fileName)
-            print '%s: Deleted Folder' % baseName
-        elif os.path.isfile(fileName):
-            os.remove(fileName)
-            print '%s: Deleted' % baseName
+
+def check_arguments(ages):
+    """Validate the age argument and return the sorted list of ages."""
+
+    clean, ages_list = parse_ages_argument(ages)
+
+    if not clean:
+        print(
+            f"filepurge: invalid ages argument: {ages}",
+            file=sys.stderr,
+        )
+        usage(exit_code=2)
+
+    return ages_list
+
+
+def parse_ages_argument(ages):
+    """
+    Parse the age argument.
+
+    Return a reverse-chronological list of desired ages in days.
+    """
+
+    if not ages:
+        return False, []
+
+    ages_list = []
+    age_strings = ages.split(",")
+
+    for age_string in age_strings:
+        age_string = age_string.strip()
+
+        if not age_string.isdigit():
+            return False, []
+
+        age = int(age_string)
+
+        if age < 0:
+            return False, []
+
+        ages_list.append(age)
+
+    if not ages_list:
+        return False, []
+
+    # Remove duplicate ages and sort from oldest to newest.
+    ages_list = sorted(set(ages_list), reverse=True)
+
+    return True, ages_list
+
+
+def get_sorted_directory_list(directory, pattern):
+    """
+    Return matching directory entries sorted by modification time.
+
+    Each entry is represented as:
+        (modification_time, full_path, base_name)
+    """
+
+    sorted_directory_list = []
+
+    with os.scandir(directory) as entries:
+        for entry in entries:
+            if not fnmatch.fnmatch(entry.name, pattern):
+                continue
+
+            try:
+                modification_time = entry.stat(follow_symlinks=False).st_mtime
+            except FileNotFoundError:
+                print(
+                    f"{entry.name}: disappeared while scanning, skipping",
+                    file=sys.stderr,
+                )
+                continue
+            except OSError as err:
+                print(
+                    f"{entry.name}: cannot read metadata: {err}",
+                    file=sys.stderr,
+                )
+                continue
+
+            sorted_directory_list.append(
+                (
+                    modification_time,
+                    entry.path,
+                    entry.name,
+                )
+            )
+
+    sorted_directory_list.sort(key=lambda item: item[0])
+
+    return sorted_directory_list
+
+
+def delete_file(file_entry, force):
+    """Delete one file or directory, respecting simulation mode."""
+
+    _, file_name, base_name = file_entry
+
+    if not force:
+        print(f"{base_name}: Flagged for deletion")
+        return
+
+    try:
+        if os.path.islink(file_name):
+            os.unlink(file_name)
+            print(f"{base_name}: Deleted symbolic link")
+
+        elif os.path.isdir(file_name):
+            shutil.rmtree(file_name)
+            print(f"{base_name}: Deleted folder")
+
+        elif os.path.isfile(file_name):
+            os.remove(file_name)
+            print(f"{base_name}: Deleted")
+
         else:
-            print '%s: is not a file or folder - WARNING!' % baseName
+            print(
+                f"{base_name}: is not a file or folder, skipping",
+                file=sys.stderr,
+            )
+
+    except OSError as err:
+        print(
+            f"{base_name}: deletion failed: {err}",
+            file=sys.stderr,
+        )
+        raise
 
 
-# convert an age in days to seconds from the epoch
-def convertAgeToAgeEpoch(age):
-    ageEpoch = int(time.time()) - (age * 24*60*60)
-    return ageEpoch
+def convert_age_to_epoch(age):
+    """Convert an age in days to an epoch timestamp."""
 
-# convert an age in seconds from the epoch to days
-def convertAgeEpochToAge(ageEpoch):
-    age = (int(time.time()) - ageEpoch) / (24*60*60)
-    return age
+    return int(time.time()) - (age * 24 * 60 * 60)
 
-# purge the specified directory
+
+def convert_epoch_to_age(age_epoch):
+    """Convert an epoch timestamp to a whole number of days."""
+
+    return (int(time.time()) - int(age_epoch)) // (24 * 60 * 60)
+
+
 def purge(directory, pattern, ages, force):
-    # make sure the backup directory is sound
-    checkBackupArea(directory)
+    """Purge the specified directory according to the retention ages."""
 
-    # check arguments are sensible
-    agesList = checkArguments(ages)
+    directory = os.path.abspath(directory)
 
-    # get the listing of the backup directory
-    sortedDirList = getSortedDirList(directory, pattern)
+    check_backup_area(directory)
+    ages_list = check_arguments(ages)
 
-    # go through each file in the directory and ensure that it's a keeper
-    agesIterator = iter(agesList)
-    currentDesiredAge = agesIterator.next()
-    completedDesiredAges = False
+    sorted_directory_list = get_sorted_directory_list(directory, pattern)
 
-    print "finding files matching pattern %s of ages %s in directory %s" % (pattern, ages, directory)
+    print(
+        f"Finding files matching pattern {pattern!r} "
+        f"of ages {ages} in directory {directory}"
+    )
 
-    for i,file in enumerate(sortedDirList):
-        currentDesiredAgeEpoch = convertAgeToAgeEpoch(currentDesiredAge)
+    if not sorted_directory_list:
+        print("No matching files found")
+        return
+
+    ages_iterator = iter(ages_list)
+    current_desired_age = next(ages_iterator)
+    completed_desired_ages = False
+
+    for index, file_entry in enumerate(sorted_directory_list):
+        current_desired_age_epoch = convert_age_to_epoch(
+            current_desired_age
+        )
+
         keeper = False
-        fileAge = file[0]
-        if i < len(sortedDirList)-1:
-            nextFile = sortedDirList[i+1]
-            nextFileAge = nextFile[0]
+        file_age = file_entry[0]
 
-            # should we delete this file?
-            if (completedDesiredAges == True) or ((fileAge < currentDesiredAgeEpoch) and (nextFileAge < currentDesiredAgeEpoch)):
-                deleteFile(file, force)
+        if index < len(sorted_directory_list) - 1:
+            next_file = sorted_directory_list[index + 1]
+            next_file_age = next_file[0]
+
+            should_delete = (
+                completed_desired_ages
+                or (
+                    file_age < current_desired_age_epoch
+                    and next_file_age < current_desired_age_epoch
+                )
+            )
+
+            if should_delete:
+                delete_file(file_entry, force)
             else:
                 keeper = True
+
         else:
-            # we're at the last item. if we're still looking, keep it
-            if completedDesiredAges == False:
+            # Keep the newest remaining item while retention ages
+            # are still being processed.
+            if not completed_desired_ages:
                 keeper = True
             else:
-                deleteFile(file, force)
+                delete_file(file_entry, force)
 
-        # lovely we found a keeper, so get the next file age to satisfy
-        if keeper == True:
-            fileAgeDays = convertAgeEpochToAge(fileAge)
-            print '%s: keeping this file of age %d days to satisfy age %d days' % (file[2], fileAgeDays, currentDesiredAge)
+        if keeper:
+            file_age_days = convert_epoch_to_age(file_age)
+
+            print(
+                f"{file_entry[2]}: keeping this item of age "
+                f"{file_age_days} days to satisfy age "
+                f"{current_desired_age} days"
+            )
+
             try:
-                currentDesiredAge = agesIterator.next()
+                current_desired_age = next(ages_iterator)
             except StopIteration:
-                completedDesiredAges = True
+                completed_desired_ages = True
 
-    # if we haven't made our way through all the requested ages, process them anyway, solely to message the user
-    if completedDesiredAges == False:
+    if not completed_desired_ages:
         while True:
-            print 'no file to satisfy age %d' % currentDesiredAge
+            print(f"No file found to satisfy age {current_desired_age}")
+
             try:
-                currentDesiredAge = agesIterator.next()
+                current_desired_age = next(ages_iterator)
             except StopIteration:
                 break
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main(sys.argv[1:])
